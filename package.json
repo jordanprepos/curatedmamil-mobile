@@ -1,22 +1,41 @@
 {
   "name": "dashboard-curatedmamil",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/jost": "^0.4.2",
+    "@expo-google-fonts/playfair-display": "^0.4.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.11",
+    "expo-constants": "~57.0.9",
+    "expo-font": "~57.0.1",
+    "expo-image-picker": "~57.0.8",
+    "expo-linking": "~57.0.5",
+    "expo-router": "~57.0.11",
+    "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
+    "firebase": "^12.17.1",
     "react": "19.2.3",
-    "react-native": "0.86.2"
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "firebase-admin": "^14.2.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "emulators": "firebase emulators:start --only auth,firestore",
+    "seed": "node firebase/seed.mjs",
+    "seed:emulator": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 node firebase/seed.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }

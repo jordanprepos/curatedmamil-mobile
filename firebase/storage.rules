@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Product photos for the Mami L dashboard.
+//
+// Mirrors firestore.rules: access is gated on the same owners/{uid} marker
+// document, checked cross-service. Deployable only once a Cloud Storage bucket
+// exists, which requires the Blaze plan.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isOwner() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/owners/$(request.auth.uid));
+    }
+
+    match /products/{fileName} {
+      allow read: if isOwner();
+      // Images only, capped at 8 MB.
+      allow write: if isOwner()
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allOther=**} {
+      allow read, write: if false;
+    }
+  }
+}

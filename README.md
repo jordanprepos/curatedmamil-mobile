@@ -245,11 +245,11 @@ The mockup hardcodes `padding-top: 62px` on every screen — that exists purely 
 
 ## Firebase
 
-The app currently points at **`mamiel-project`** (per `.env`).
+The app points at **`mamiel-project`** — `.env` for the client, `.firebaserc` for the CLI.
+Keep those two in sync; if they drift, the app reads from one project while
+`firebase deploy` pushes rules to another, which fails in confusing ways.
 
-> ⚠️ **`.firebaserc` still targets `curated-mamil`.** That means the app talks to one
-> project while `firebase deploy` would push rules to another. Run
-> `npx firebase-tools use mamiel-project` to align them before deploying anything.
+The Firestore database lives in `asia-southeast2` (Jakarta), closest to the shop.
 
 ### Data model
 

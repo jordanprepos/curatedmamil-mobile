@@ -17,6 +17,7 @@ import { PillButton } from '../../src/components/PillButton';
 import { addProduct } from '../../src/data/products';
 import { formatRupiahInput, parseRupiah } from '../../src/lib/format';
 import { uploadErrorMessage, uploadProductImage } from '../../src/lib/storage';
+import { WriteTimeout, withWriteTimeout, writeErrorMessage } from '../../src/lib/write';
 import { Label, Txt } from '../../src/theme/text';
 import {
   CATEGORIES,
@@ -28,6 +29,15 @@ import {
   type Category,
   type Status,
 } from '../../src/theme/tokens';
+
+/**
+ * Photo uploads get a longer leash than a document write — they move real bytes
+ * over mobile data. This is only a backstop against `busy` sticking on forever
+ * with both save buttons dead; `storage.maxUploadRetryTime` is what normally
+ * ends a failing upload, and it is set well inside this bound so the specific
+ * Storage error wins over the generic timeout.
+ */
+const UPLOAD_TIMEOUT_MS = 90_000;
 
 export default function ProdukBaru() {
   const insets = useSafeAreaInsets();
@@ -92,27 +102,36 @@ export default function ProdukBaru() {
     let imageUrl = photoUrl.trim() || undefined;
     if (!imageUrl && localPhoto) {
       try {
-        imageUrl = await uploadProductImage(localPhoto, trimmedSku);
+        imageUrl = await withWriteTimeout(
+          uploadProductImage(localPhoto, trimmedSku),
+          UPLOAD_TIMEOUT_MS,
+        );
       } catch (e) {
         setBusy(false);
-        setError(uploadErrorMessage(e));
+        setError(
+          e instanceof WriteTimeout
+            ? 'Unggah foto terlalu lama. Tempel URL foto sebagai gantinya.'
+            : uploadErrorMessage(e),
+        );
         return;
       }
     }
 
     try {
-      await addProduct({
-        name: trimmedName,
-        price: value,
-        sku: trimmedSku,
-        status,
-        cat,
-        ...(imageUrl ? { imageUrl } : null),
-      });
+      await withWriteTimeout(
+        addProduct({
+          name: trimmedName,
+          price: value,
+          sku: trimmedSku,
+          status,
+          cat,
+          ...(imageUrl ? { imageUrl } : null),
+        }),
+      );
       reset();
       router.replace('/');
-    } catch {
-      setError('Gagal menyimpan produk. Coba lagi.');
+    } catch (e) {
+      setError(writeErrorMessage(e, 'Gagal menyimpan produk. Coba lagi.'));
     } finally {
       setBusy(false);
     }
@@ -156,7 +175,12 @@ export default function ProdukBaru() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ gap: 16, paddingTop: 4, paddingHorizontal: space.screenX }}
+        contentContainerStyle={{
+          gap: 16,
+          paddingTop: 4,
+          paddingBottom: 8,
+          paddingHorizontal: space.screenX,
+        }}
         keyboardShouldPersistTaps="handled"
       >
         {/* Photo slot — replaces the mockup's <image-slot> drop target */}
@@ -263,12 +287,6 @@ export default function ProdukBaru() {
             ))}
           </View>
         </View>
-
-        {error ? (
-          <Txt size={12.5} color="#B4524B">
-            {error}
-          </Txt>
-        ) : null}
       </ScrollView>
 
       <View
@@ -277,6 +295,17 @@ export default function ProdukBaru() {
           paddingHorizontal: space.screenX,
         }}
       >
+        {/*
+          The error lives in this fixed footer, not in the scrolling body: the
+          form is taller than the viewport, so an error rendered after the STATUS
+          chips sits below the fold and a failed Simpan looks like nothing
+          happened at all.
+        */}
+        {error ? (
+          <Txt size={12.5} color="#B4524B" style={{ marginBottom: 10 }}>
+            {error}
+          </Txt>
+        ) : null}
         <PillButton
           label="Terbitkan ke Website"
           block

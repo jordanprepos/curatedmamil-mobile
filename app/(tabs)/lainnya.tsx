@@ -9,6 +9,7 @@ import { useShopData } from '../../src/data/store';
 import { updateShop } from '../../src/data/shop';
 import { useAuth } from '../../src/lib/auth';
 import { dayAndMonthId, rupiah, startOfMonth } from '../../src/lib/format';
+import { withWriteTimeout, writeErrorMessage } from '../../src/lib/write';
 import { Display, Txt } from '../../src/theme/text';
 import { colors, radius, space, statDotColors } from '../../src/theme/tokens';
 
@@ -57,10 +58,10 @@ export default function Ringkasan() {
 
     setSaving(true);
     try {
-      await updateShop({ [editing]: value });
+      await withWriteTimeout(updateShop({ [editing]: value }));
       setEditing(null);
-    } catch {
-      setError('Gagal menyimpan. Coba lagi.');
+    } catch (e) {
+      setError(writeErrorMessage(e, 'Gagal menyimpan. Coba lagi.'));
     } finally {
       setSaving(false);
     }

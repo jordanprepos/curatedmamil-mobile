@@ -55,6 +55,17 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 /**
+ * Storage retries a failing upload for two minutes by default, with backoff.
+ * When the bucket doesn't exist — the Spark plan case — every attempt fails
+ * identically, so that default just buries the real error behind a two-minute
+ * wait and the Tambah screen reports a timeout instead of what went wrong.
+ * Shortened so `uploadErrorMessage` sees the actual Storage error code. This
+ * clock only runs once an attempt has already failed, so it doesn't cut short a
+ * healthy-but-slow upload — it bounds how long a broken one keeps retrying.
+ */
+storage.maxUploadRetryTime = 30_000;
+
+/**
  * Local development against the Firebase emulator suite.
  *
  * Set EXPO_PUBLIC_USE_FIREBASE_EMULATOR=1 and run `npm run emulators` to work

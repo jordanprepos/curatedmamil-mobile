@@ -10,6 +10,7 @@ import { StatusPill } from '../../../src/components/StatusPill';
 import { useShopData } from '../../../src/data/store';
 import { setProductStatus } from '../../../src/data/products';
 import { rupiah } from '../../../src/lib/format';
+import { withWriteTimeout, writeErrorMessage } from '../../../src/lib/write';
 import { Display, Label, Txt } from '../../../src/theme/text';
 import { colors, radius, space } from '../../../src/theme/tokens';
 
@@ -57,12 +58,12 @@ export default function DetailProduk() {
     setBusy(kind);
     setError(null);
     try {
-      await setProductStatus(product.id, status);
+      await withWriteTimeout(setProductStatus(product.id, status));
       // The mockup returns to Dasbor after archiving; marking sold stays put so
       // the owner can see the pill change.
       if (kind === 'archive') router.replace('/');
-    } catch {
-      setError('Gagal memperbarui produk. Coba lagi.');
+    } catch (e) {
+      setError(writeErrorMessage(e, 'Gagal memperbarui produk. Coba lagi.'));
     } finally {
       setBusy(null);
     }

@@ -1,7 +1,15 @@
 # Mami L — Seller Dashboard
 
-A mobile app for **Curated by Mami L**, an Indonesian curated handbag shop. It lets the
-shop owner manage a live product catalog and respond to WhatsApp orders from her phone.
+This is a website for my mom's small personal business. She resells handbags and takes
+every order herself over WhatsApp, so the site isn't a store — there's no cart, no
+checkout, no payment processing. Its whole job is to show what's in stock and make it
+effortless for a customer to start a chat about a specific bag, with the name and price
+already written into the message.
+
+This repository is the **owner-facing half** of that: the dashboard Mami L uses to keep
+the catalog current and handle the orders those chats turn into. She adds and prices
+bags, flips them between Aktif / Terjual / Arsip as they move, and replies to each buyer
+from her phone. Everything a customer sees is driven by what she does here.
 
 Built with Expo / React Native and backed by Firebase. Ported from the Claude Design
 mockup `Mami L Dashboard App.dc.html`, whose layout, palette and copy it follows closely.

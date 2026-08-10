@@ -302,6 +302,17 @@ uploads at 8 MB and requires an `image/*` content type.
 npx firebase-tools deploy --only firestore
 ```
 
+That cross-service call needs its own IAM grant: the Cloud Storage for Firebase service
+agent (`service-{PROJECT_NUMBER}@gcp-sa-firebasestorage.iam.gserviceaccount.com`) must hold
+`roles/firebaserules.firestoreServiceAgent`, whose sole permission is
+`datastore.entities.get`. Deploying the storage rules prompts to grant it:
+
+```bash
+npx firebase-tools deploy --only storage
+```
+
+Skip that prompt and every upload fails — see [Troubleshooting](#troubleshooting).
+
 ### Seeding
 
 [`firebase/seed.mjs`](firebase/seed.mjs) provisions the owner account and loads the
@@ -377,8 +388,9 @@ its own project.
 
 - **Product photo upload requires the Blaze plan.** Cloud Storage buckets are not
   provisioned on the free Spark tier, so `uploadProductImage` fails until billing is
-  enabled. The Tambah screen has a **URL FOTO** field that works on the free plan — this
-  field is not in the original mockup and exists specifically to cover this gap.
+  enabled. This project is on Blaze and upload works; the Tambah screen's **URL FOTO**
+  field is not in the original mockup and was added to cover the Spark-plan gap. It is
+  kept as a fallback for when the owner already has a hosted image.
 - **The Firestore emulator needs JDK 21+**; this machine has JDK 8, so `npm run emulators`
   will fail until a newer JDK is installed (`brew install openjdk@21`). Everything else
   runs against the live project and is unaffected.
@@ -425,6 +437,18 @@ Check the console for a font-loading failure.
 
 **`permission-denied` on every read.** The signed-in account has no `owners/{uid}`
 document. Run the seed, or add the document by hand in the console.
+
+**Photo upload fails with `403 Permission denied` while everything else works.** The
+cross-service IAM grant behind `storage.rules`' `isOwner()` is missing, so
+`firestore.exists()` can't resolve and the rule evaluates false — for the `uploadBytes`
+write and the `getDownloadURL` that follows it. Already-minted `imageUrl` links keep
+working, since download tokens bypass rules, and Firestore itself is unaffected, since its
+own `exists()` is in-service and needs no grant. Confirm with
+`gcloud projects get-iam-policy <project>`: the Storage service agent should hold
+`roles/firebaserules.firestoreServiceAgent`. Fix by re-running
+`npx firebase-tools deploy --only storage` and accepting the permission prompt — see
+[Access control](#access-control). Note the rules text alone looks correct either way, so
+diffing deployed rules against the repo proves nothing here.
 
 **`CONFIGURATION_NOT_FOUND` on sign-in.** Email/Password sign-in has never been enabled on
 the project. Console → Authentication → Get started → Email/Password → Enable. There is no

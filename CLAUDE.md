@@ -59,7 +59,9 @@ Points at `mamiel-project` (`asia-southeast2`/Jakarta) via `.env` (client) and `
 
 ### Cloud Storage
 
-The project is on the Blaze plan and Cloud Storage is provisioned: bucket `mamiel-project.firebasestorage.app`, deployed via the `"storage"` block in `firebase.json`. Product photo upload works. The Tambah screen's URL FOTO field predates this — it was the Spark-plan workaround — and is kept as a fallback for when the owner already has a hosted image.
+The project is on the Blaze plan and Cloud Storage is provisioned: bucket `mamiel-project.firebasestorage.app`, deployed via the `"storage"` block in `firebase.json`. Product photo upload works — verified end-to-end on 2026-08-10.
+
+`storage.rules`' `isOwner()` calls `firestore.exists()` **cross-service**, which needs an IAM grant separate from the rules themselves: the Storage service agent (`service-481440432212@gcp-sa-firebasestorage.iam.gserviceaccount.com`) must hold `roles/firebaserules.firestoreServiceAgent`. Without it every upload returns a bare `403 Permission denied` while Firestore keeps working, because Firestore's own `exists()` is in-service. The grant is in place now; `npx firebase-tools deploy --only storage` prompts for it if a fresh project ever needs it. Don't debug this by diffing deployed rules against the repo — the rules read as correct in both states. The Tambah screen's URL FOTO field predates this — it was the Spark-plan workaround — and is kept as a fallback for when the owner already has a hosted image.
 
 The bucket is in **`US-EAST1`, not `asia-southeast2`** where Firestore lives. This is deliberate, chosen for development and testing; a bucket's location is permanent, so correcting it means creating a second bucket and targeting it explicitly (`"storage": [{ "bucket": ..., "rules": ... }]`). Don't report the mismatch as a bug — but it is worth revisiting before real buyers in Indonesia depend on image load times.
 

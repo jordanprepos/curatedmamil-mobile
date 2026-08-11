@@ -62,6 +62,13 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
   },
+  // `eas init` can't write this itself — the config is dynamic (app.config.ts, not
+  // app.json), so EAS has no static file to edit and prints the id for pasting instead.
+  extra: {
+    eas: {
+      projectId: '33d897df-6460-493d-a6fa-e2b3deae4e7b',
+    },
+  },
 };
 
 export default config;

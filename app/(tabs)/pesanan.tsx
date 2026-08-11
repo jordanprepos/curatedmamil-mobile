@@ -8,6 +8,7 @@ import { OrderStatePill } from '../../src/components/StatusPill';
 import { useShopData } from '../../src/data/store';
 import { countNewOrders, setOrderState, type Order } from '../../src/data/orders';
 import { rupiah } from '../../src/lib/format';
+import { withWriteTimeout, writeErrorMessage } from '../../src/lib/write';
 import { Txt } from '../../src/theme/text';
 import { colors, space } from '../../src/theme/tokens';
 
@@ -40,9 +41,9 @@ export default function Pesanan() {
   async function markDone(order: Order) {
     setActionError(null);
     try {
-      await setOrderState(order.id, 'Selesai');
-    } catch {
-      setActionError('Gagal memperbarui pesanan. Coba lagi.');
+      await withWriteTimeout(setOrderState(order.id, 'Selesai'));
+    } catch (e) {
+      setActionError(writeErrorMessage(e, 'Gagal memperbarui pesanan. Coba lagi.'));
     }
   }
 

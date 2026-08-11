@@ -32,6 +32,7 @@ design and the shop's actual customers. There is no i18n layer and no English fa
 - [Scripts](#scripts)
 - [Known limits](#known-limits)
 - [Divergences from the mockup](#divergences-from-the-mockup)
+- [Building with EAS](#building-with-eas)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -44,6 +45,8 @@ npx expo start
 ```
 
 Then scan the QR code with **Expo Go** on your phone, or press `w` to open it in a browser.
+Expo Go has to be an SDK 57 build — the Play Store one frequently isn't, see
+[Troubleshooting](#troubleshooting).
 
 You will need a `.env` file — copy `.env.example` and fill in the Firebase values (see
 [Firebase](#firebase) below). Without it the app throws on startup with a clear message.
@@ -488,7 +491,57 @@ plus a monogram fallback.
 
 ---
 
+## Building with EAS
+
+`eas.json` defines two build profiles: **`preview`** (an internal-distribution APK, for
+putting a real build on the owner's phone) and **`production`** (an app bundle, with
+`autoIncrement` on). Version codes are managed remotely — `cli.appVersionSource` is
+`remote`, so EAS owns the counter, not the repo. The EAS project id lives in
+[app.config.ts](app.config.ts) under `extra.eas.projectId`: `eas init` writes that itself
+only for a static `app.json`, and this project's config is dynamic, so it has to be
+pasted in by hand.
+
+**Before the first build, put the Firebase config into EAS.** This is the part that will
+bite you. The app reads `EXPO_PUBLIC_FIREBASE_*` straight off `process.env`
+([src/lib/firebase.ts](src/lib/firebase.ts)), Expo inlines those at bundle time, and
+`.env` is gitignored — so it is *never uploaded to the EAS builder*. Both profiles set
+`"environment"`, which points them at EAS-hosted environment variables instead, and those
+have to be created separately:
+
+```bash
+eas env:create --environment preview --name EXPO_PUBLIC_FIREBASE_API_KEY --value AIza… --visibility plaintext
+```
+
+…and the same for the other five, then again for `production`. Plaintext visibility is
+right here: a Firebase web config is not a secret (see
+[Environment variables](#environment-variables)), and marking it secret would only stop
+you reading it back.
+
+Skip this and nothing warns you. The build **succeeds** — the missing values inline as
+`undefined` — and the app dies the instant it launches with *"Firebase config missing.
+Copy .env.example to .env…"*, which is misleading advice on a device that has no `.env`
+to copy. Verify with `eas env:list --environment preview` before building.
+
+---
+
 ## Troubleshooting
+
+**Expo Go says "Project is incompatible with this version of Expo Go".** The Expo Go
+installed on the device was built for an older SDK than this project's SDK 57 — that is
+exactly what Expo Go is reporting when it compares the dev server's manifest `sdkVersion`
+against its own. The on-screen advice to update from the Play Store often does not help:
+store builds of Expo Go have lagged behind SDK releases, and Expo serves current-SDK Expo
+Go through the Expo CLI, Expo Orbit, and [expo.dev/go](https://expo.dev/go?sdkVersion=57&platform=android&device=true)
+instead. The easy fix is to let the CLI install the matching build — turn on USB debugging,
+connect the phone, and run `npx expo start --android`; otherwise install it from that page
+(it shows a QR to scan on the phone). Afterwards confirm Expo Go reports **57.0.x**. It
+will drift back: the sideloaded build and the store build share the package id
+`host.exp.exponent`, so Play Store auto-update can silently replace 57.0.x with an older
+store version and break the project again — turn auto-update off for Expo Go. Nothing in
+this repo needs to change, and `npx expo start --web` is unaffected either way. Past
+prototyping, the durable answer is a development build (`expo-dev-client` + EAS Build),
+which ties the runtime to the project rather than to a store app — `eas.json` is already
+set up for the build side, see [Building with EAS](#building-with-eas).
 
 **Blank screen on launch, no error.** The splash gate is waiting on fonts or auth state.
 Check the console for a font-loading failure.

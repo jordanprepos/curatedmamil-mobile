@@ -22,9 +22,13 @@ npm run typecheck           # tsc --noEmit — no separate lint script exists
 npm run emulators           # local Auth + Firestore emulators — requires JDK 21+
 npm run seed                # seed the live project (see README "Seeding" for required env vars)
 npm run seed:emulator       # seed the emulators instead
+npm run add-owner           # grant one person access (Auth account + owners/{uid} doc) — see README "Adding an owner"
+                             # don't use `seed` for this: it unconditionally overwrites the demo catalog/orders
 ```
 
 There is no test suite and no lint script in this repo — `npm run typecheck` is the only automated check. No iOS Simulator is available on this machine (needs full Xcode); use Expo Go on a real device or `npx expo start --web`.
+
+Expo Go on the device must be an **SDK 57** build. The Play Store one often isn't — store releases lag SDK releases — and an older Expo Go rejects the project outright with "Project is incompatible with this version of Expo Go". Install it via `npx expo start --android` (USB debugging on), Orbit, or `expo.dev/go`; the store build can later overwrite it, since both share the package id `host.exp.exponent`. See the README's [Troubleshooting](README.md#troubleshooting) entry — don't treat this as a bug in the app.
 
 ## Architecture
 
@@ -37,6 +41,9 @@ There is no test suite and no lint script in this repo — `npm run typecheck` i
 ### Data flow
 All Firestore listeners live in one place, `ShopDataProvider` ([src/data/store.tsx](src/data/store.tsx)), mounted once in the tab layout. Screens read via `useShopData()` instead of subscribing individually, so tab switches don't tear down/re-establish snapshots. Search, filtering, and sorting are all **client-side** (small catalog, avoids composite indexes, matches mockup behaviour exactly). Sorting in particular must stay client-side in `subscribeProducts`: `addProduct` writes `serverTimestamp()`, so a just-created product has `createdAt: null` in its optimistic local echo until the server round-trips — an `orderBy('createdAt')` would drop it from the snapshot and make a successful save look like it failed.
 
+### Writes
+Firestore's `addDoc`/`setDoc`/`updateDoc` promises apply to the local cache immediately but only *settle* once the server acknowledges — if the SDK can't reach the backend, that promise never resolves or rejects, so an `await` on it leaves a screen's `busy` flag stuck with no error. `withWriteTimeout` in [src/lib/write.ts](src/lib/write.ts) races each write against a 12s timer and `writeErrorMessage` turns the result into Indonesian copy; every screen that writes (Detail Produk, Tambah, Pesanan, Ringkasan) goes through both rather than awaiting the SDK call directly.
+
 ### Data model (Firestore)
 ```
 products/{id}   name, price (integer rupiah, NOT a display string), sku,
@@ -48,12 +55,15 @@ orders/{id}     buyer, itemName, price, state: Baru | Dikirim | Selesai,
 shop/config     whatsappNumber, shopName
 owners/{uid}    email, grantedAt  — presence of this doc IS the authorization
 ```
+Rupiah grouping in [src/lib/format.ts](src/lib/format.ts) is done by hand rather than `Intl.NumberFormat` — Hermes ships a trimmed ICU and locale support varies by platform. Don't "simplify" it to `Intl`.
 Every Firestore/Storage rule gates on `exists(/databases/$(database)/documents/owners/$(request.auth.uid))` — access is granted/revoked by adding/removing that marker doc (e.g. via console), not by editing rules. The `owners` collection is never client-writable. `storage.rules` mirrors this and additionally caps uploads at 8 MB / requires `image/*`.
 
 ### Design system
 Colors, radii, shadows, and status/order-state palettes are defined once in [src/theme/tokens.ts](src/theme/tokens.ts), taken verbatim from the mockup — don't invent new colors. React Native `Text` doesn't inherit `fontFamily`, so all copy must go through the wrappers in [src/theme/text.tsx](src/theme/text.tsx) (`<Txt>` Jost/UI, `<Display>` Playfair/wordmark & product names, `<Label>` small all-caps). Use `useSafeAreaInsets()` for top spacing — never hardcode the mockup's `padding-top: 62px`, which only existed to clear a *drawn* status bar in the HTML prototype's device frame.
 
 ## Firebase project
+
+An **EAS build has no `.env`** — it's gitignored, so it never reaches the builder, and both `eas.json` profiles resolve `EXPO_PUBLIC_FIREBASE_*` from EAS-hosted environment variables that must be created first (`eas env:create`). Nothing warns you: the build succeeds and the app throws `Firebase config missing` on launch. See the README's [Building with EAS](README.md#building-with-eas).
 
 Points at `mamiel-project` (`asia-southeast2`/Jakarta) via `.env` (client) and `.firebaserc` (CLI) — **keep these two in sync**; drift means the app reads from one project while `firebase deploy` pushes rules to another. To point at a different project or diagnose `permission-denied` / `CONFIGURATION_NOT_FOUND` / persistence issues, see the README's [Pointing the app at a different Firebase project](README.md#pointing-the-app-at-a-different-firebase-project) and [Troubleshooting](README.md#troubleshooting) sections — both are detailed and current, don't re-derive from scratch.
 

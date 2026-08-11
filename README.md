@@ -27,6 +27,7 @@ design and the shop's actual customers. There is no i18n layer and no English fa
 - [Architecture](#architecture)
 - [Design system](#design-system)
 - [Firebase](#firebase)
+- [Adding an owner](#adding-an-owner)
 - [Pointing the app at a different Firebase project](#pointing-the-app-at-a-different-firebase-project)
 - [Scripts](#scripts)
 - [Known limits](#known-limits)
@@ -125,6 +126,7 @@ firebase/
   storage.rules               same gate, for product photos
   firestore.indexes.json
   seed.mjs                    provisions the owner account + seeds the catalog
+  add-owner.mjs               grants one person access, without touching the catalog
 
 app.config.ts                 Expo config (replaces app.json)
 .env / .env.example           Firebase web config
@@ -187,6 +189,30 @@ local echo carries `createdAt: null` until the server round-trips. A Firestore
 `orderBy('createdAt')` would drop that document from the snapshot, and the owner would
 watch a product they just saved fail to appear — reading as "save failed". Sorting in
 `subscribeProducts` puts pending writes at the top instead.
+
+### Deleting a product
+
+`Hapus Produk` on Detail removes the Firestore document, then deletes the uploaded photo
+best-effort. The order matters: the document is the record the owner watches disappear, so
+a failed photo delete costs at most an orphaned object, while the reverse order risks a
+product whose photo is already gone. `deleteProductImage` never rejects and is not awaited.
+
+Two guards sit in front of that photo delete, because `imageUrl` is not necessarily ours —
+the URL FOTO field accepts any hosted image, and the storage path is never persisted, only
+the download URL:
+
+- **`deleteProductImage` parses the URL** and requires it to name our own configured bucket
+  with a single-segment `products/` path. It deliberately does *not* use `ref(storage, url)`:
+  that helper also accepts `storage.googleapis.com/<any-bucket>/<path>`, so a pasted link to
+  an unrelated public bucket would hand back a valid reference to someone else's file.
+- **The caller skips the delete when another product shares the same `imageUrl`**, which
+  URL FOTO makes possible.
+
+The screen also carries a `removed` ref. `deleteDoc` applies to the local cache before its
+promise settles, so `products` drops the document while the write is still in flight — and
+it stays dropped even if the server rejects it. Without that flag the `!product` early
+return flashes "Produk tidak ditemukan." over the modal and takes the failure message with
+it.
 
 ---
 
@@ -296,7 +322,10 @@ from the Firebase console without a rules deploy. The `owners` collection itself
 client-writable.
 
 `storage.rules` mirrors this cross-service via `firestore.exists()`, and additionally caps
-uploads at 8 MB and requires an `image/*` content type.
+uploads at 8 MB and requires an `image/*` content type. Those two conditions sit on
+`allow create, update` rather than `allow write`: a delete carries no `request.resource`, so
+under a single `write` rule they evaluate against null and every delete is denied. `delete`
+gets its own `isOwner()`-only rule so `Hapus Produk` can remove a product's photo.
 
 ```bash
 npx firebase-tools deploy --only firestore
@@ -312,6 +341,32 @@ npx firebase-tools deploy --only storage
 ```
 
 Skip that prompt and every upload fails — see [Troubleshooting](#troubleshooting).
+
+### Adding an owner
+
+Two things are required, and the second is the one that's easy to miss: a Firebase Auth
+account gets someone a sign-in, but the `owners/{uid}` document is what grants access.
+Without it they sign in successfully and then hit `permission-denied` on every read. Note
+there are no usernames — the Masuk screen takes an email — and no roles: anyone added here
+gets the same access as everyone else, including deleting products.
+
+[`firebase/add-owner.mjs`](firebase/add-owner.mjs) does both, and nothing else:
+
+```bash
+OWNER_EMAIL=new@example.com OWNER_PASSWORD='…' \
+GOOGLE_CLOUD_QUOTA_PROJECT=mamiel-project npm run add-owner
+```
+
+`DRY_RUN=1` reports what would change and writes nothing — worth a first pass, since the
+script targets whatever `FIREBASE_PROJECT_ID` says (default `mamiel-project`). An existing
+account keeps its password unless you pass `RESET_PASSWORD=1`. To revoke access, delete the
+`owners/{uid}` document; the Auth account can stay.
+
+**Don't use `npm run seed` to add a login.** It calls `seedFirestore()` unconditionally, so
+it would also rewrite the five demo products, four demo orders and `shop/config` — and it
+resets the password of an account that already exists. The same two steps can be done by
+hand in the console: Authentication → Add user, then a document in `owners` whose **ID is
+that account's UID**.
 
 ### Seeding
 
@@ -421,6 +476,9 @@ app — but each of these is worth knowing before you "fix" one.
    [Known limits](#known-limits).
 8. **`Tandai Terjual` keeps you on Detail** so the status pill visibly changes.
    `Arsipkan Produk` pops back to Dasbor, matching the mockup's `archive`.
+9. **`Hapus Produk` is new.** The mockup had no delete at all — `Arsip` is only a status, so
+   nothing ever left the collection. It removes the Firestore document and, best-effort, the
+   uploaded photo, behind a confirmation modal. See [Deleting a product](#deleting-a-product).
 
 The mockup's own scaffolding — `ios-frame.jsx` (device bezel, dynamic island, drawn status
 bar) and `image-slot.js` (a drag-and-drop placeholder backed by a JSON sidecar in the

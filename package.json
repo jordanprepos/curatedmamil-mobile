@@ -34,6 +34,7 @@
     "web": "expo start --web",
     "emulators": "firebase emulators:start --only auth,firestore",
     "seed": "node firebase/seed.mjs",
+    "add-owner": "node firebase/add-owner.mjs",
     "seed:emulator": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 node firebase/seed.mjs",
     "typecheck": "tsc --noEmit"
   },

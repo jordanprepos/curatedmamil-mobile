@@ -15,10 +15,14 @@ service firebase.storage {
 
     match /products/{fileName} {
       allow read: if isOwner();
-      // Images only, capped at 8 MB.
-      allow write: if isOwner()
+      // Images only, capped at 8 MB. Split out from `write` because a delete
+      // carries no `request.resource` — under a single `allow write` rule the
+      // size and contentType checks evaluate against null and every delete is
+      // denied.
+      allow create, update: if isOwner()
         && request.resource.size < 8 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner();
     }
 
     match /{allOther=**} {

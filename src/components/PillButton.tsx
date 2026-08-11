@@ -2,7 +2,7 @@ import { ActivityIndicator, Pressable, View, type ViewStyle } from 'react-native
 import { Txt } from '../theme/text';
 import { cardShadow, colors, radius } from '../theme/tokens';
 
-type Variant = 'primary' | 'outline' | 'plain';
+type Variant = 'primary' | 'outline' | 'plain' | 'danger';
 
 type Props = {
   label: string;
@@ -35,6 +35,11 @@ export function PillButton({
 }: Props) {
   const isDisabled = disabled || loading;
 
+  // `primary` reverses out on the filled pill; `danger` carries the warning in
+  // the label, since an outline alone doesn't say "this is destructive".
+  const labelColor =
+    variant === 'primary' ? colors.onPrimary : variant === 'danger' ? colors.danger : colors.subtle;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -63,6 +68,13 @@ export function PillButton({
           ...(variant === 'plain'
             ? { backgroundColor: pressed ? colors.chip : colors.surface }
             : null),
+          ...(variant === 'danger'
+            ? {
+                backgroundColor: pressed ? colors.chip : colors.surface,
+                borderWidth: 1,
+                borderColor: colors.danger,
+              }
+            : null),
           opacity: isDisabled ? 0.55 : 1,
         },
         shadow ? cardShadow : null,
@@ -73,16 +85,19 @@ export function PillButton({
         <View style={{ height: size * 1.2, justifyContent: 'center' }}>
           <ActivityIndicator
             size="small"
-            color={variant === 'primary' ? colors.onPrimary : colors.primary}
+            // Not `labelColor`: outline/plain spinners are mauve, not their
+            // muted label grey. Only `danger` follows its label.
+            color={
+              variant === 'primary'
+                ? colors.onPrimary
+                : variant === 'danger'
+                  ? colors.danger
+                  : colors.primary
+            }
           />
         </View>
       ) : (
-        <Txt
-          size={size}
-          weight={500}
-          color={variant === 'primary' ? colors.onPrimary : colors.subtle}
-          numberOfLines={1}
-        >
+        <Txt size={size} weight={500} color={labelColor} numberOfLines={1}>
           {label}
         </Txt>
       )}

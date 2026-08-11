@@ -204,7 +204,7 @@ export default function Ringkasan() {
               containerStyle={{ marginTop: 16 }}
             />
             {error ? (
-              <Txt size={12.5} color="#B4524B" style={{ marginTop: 10 }}>
+              <Txt size={12.5} color={colors.danger} style={{ marginTop: 10 }}>
                 {error}
               </Txt>
             ) : null}

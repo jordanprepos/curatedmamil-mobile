@@ -23,6 +23,9 @@ export const colors = {
   placeholder: '#B6A79F',
 
   onPrimary: '#FFFFFF',
+
+  /** The mockup's inline-error red. Also the destructive-action accent. */
+  danger: '#B4524B',
 } as const;
 
 /** Product statuses. `Draf` only appears on the Tambah screen in the mockup. */

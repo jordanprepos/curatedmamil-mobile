@@ -302,7 +302,7 @@ export default function ProdukBaru() {
           happened at all.
         */}
         {error ? (
-          <Txt size={12.5} color="#B4524B" style={{ marginBottom: 10 }}>
+          <Txt size={12.5} color={colors.danger} style={{ marginBottom: 10 }}>
             {error}
           </Txt>
         ) : null}

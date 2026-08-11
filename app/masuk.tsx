@@ -97,7 +97,7 @@ export default function Masuk() {
         />
 
         {error ? (
-          <Txt size={12.5} weight={400} color="#B4524B" style={{ marginTop: 14 }}>
+          <Txt size={12.5} weight={400} color={colors.danger} style={{ marginTop: 14 }}>
             {error}
           </Txt>
         ) : null}

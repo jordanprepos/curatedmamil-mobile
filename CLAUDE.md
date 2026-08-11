@@ -65,4 +65,8 @@ The project is on the Blaze plan and Cloud Storage is provisioned: bucket `mamie
 
 The bucket is in **`US-EAST1`, not `asia-southeast2`** where Firestore lives. This is deliberate, chosen for development and testing; a bucket's location is permanent, so correcting it means creating a second bucket and targeting it explicitly (`"storage": [{ "bucket": ..., "rules": ... }]`). Don't report the mismatch as a bug — but it is worth revisiting before real buyers in Indonesia depend on image load times.
 
+The size/contentType conditions sit on `allow create, update`, **not** `allow write` — a delete carries no `request.resource`, so a single `write` rule denies every delete. `Hapus Produk` (Detail Produk) depends on the separate `allow delete`. When touching `storage.rules`, re-verify *upload* as well as delete: `create` now governs the upload path.
+
+Deleting a product's photo never uses `ref(storage, imageUrl)` — that helper also resolves `storage.googleapis.com/<any-bucket>/<path>`, so a URL pasted into the URL FOTO field could address someone else's bucket. `deleteProductImage` ([src/lib/storage.ts](src/lib/storage.ts)) parses the URL against the configured bucket instead, and the caller skips the delete when another product shares the same `imageUrl`.
+
 `storage.rules` gates reads on `isOwner()`, which looks like it would break the customer-facing site. It doesn't: `getDownloadURL()` returns a tokenized URL, and download tokens bypass rules — so `imageUrl` stays publicly viewable while direct bucket access stays owner-only.

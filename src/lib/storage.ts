@@ -1,4 +1,4 @@
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
 
 /**
@@ -55,6 +55,60 @@ function extensionFor(contentType: string, localUri: string): string {
   // like one rather than trusting whatever followed the last dot.
   const tail = localUri.split('?')[0].split('.').pop() ?? '';
   return /^[A-Za-z0-9]{2,5}$/.test(tail) ? tail.toLowerCase() : 'jpg';
+}
+
+/**
+ * Best-effort removal of a product photo we uploaded. Never rejects.
+ *
+ * Failure is swallowed on purpose. The record the owner sees is the Firestore
+ * document, which is already gone by the time this runs; the worst outcome here
+ * is an orphaned object in the bucket, which nothing in the app surfaces. There
+ * is deliberately no `deleteErrorMessage` counterpart to `uploadErrorMessage`.
+ */
+export async function deleteProductImage(imageUrl: string | undefined): Promise<void> {
+  const path = ourObjectPath(imageUrl);
+  if (!path) return;
+
+  try {
+    await deleteObject(ref(storage, path));
+  } catch {
+    // storage/object-not-found (already gone), storage/unauthorized, a blocked
+    // preflight — nothing worth telling the owner, the product itself is gone.
+  }
+}
+
+/**
+ * The object path inside our own bucket, or null if this URL isn't one of our
+ * uploads.
+ *
+ * `imageUrl` is not necessarily ours: the Tambah screen's URL FOTO field takes
+ * any hosted image. And the storage path is never persisted on the product doc
+ * — only the download URL — so the path is recovered by parsing that URL.
+ *
+ * Deliberately not `ref(storage, imageUrl)`: that helper also accepts
+ * `storage.googleapis.com/<any-bucket>/<path>`, so a pasted link to an
+ * unrelated public bucket would hand back a perfectly valid reference to
+ * someone else's file. It also throws `storage/invalid-url` synchronously on
+ * anything it can't parse. Matching the configured bucket ourselves avoids both.
+ */
+function ourObjectPath(imageUrl: string | undefined): string | null {
+  const bucket = storage.app.options.storageBucket;
+  if (!imageUrl || !bucket) return null;
+
+  const escaped = bucket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`^https?://[^/]+/v0/b/${escaped}/o/([^?#]+)`).exec(imageUrl);
+  if (!match) return null;
+
+  try {
+    // Download URLs percent-encode the path: `products%2FSKU-1786394163368.jpg`.
+    const path = decodeURIComponent(match[1]);
+    // One segment under products/ — what storage.rules matches, and what
+    // `uploadProductImage` writes.
+    return /^products\/[^/]+$/.test(path) ? path : null;
+  } catch {
+    // decodeURIComponent throws on a malformed escape sequence.
+    return null;
+  }
 }
 
 /** Indonesian copy for an upload failure, shown inline on the Tambah screen. */

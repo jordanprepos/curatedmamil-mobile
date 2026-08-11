@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
@@ -84,6 +85,17 @@ export async function setProductStatus(id: string, status: Status) {
     // Stamped so Ringkasan can scope revenue to the current month.
     ...(status === 'Terjual' ? { soldAt: serverTimestamp() } : null),
   });
+}
+
+/**
+ * Removes a product outright. Unlike `setProductStatus(id, 'Arsip')` there is
+ * no way back — the caller confirms first.
+ *
+ * The uploaded photo is not touched here; that is handled best-effort by
+ * `deleteProductImage` once this write is acknowledged.
+ */
+export async function deleteProduct(id: string) {
+  return deleteDoc(doc(db, 'products', id));
 }
 
 /** Case-insensitive name search, matching the mockup's `onSearch`. */

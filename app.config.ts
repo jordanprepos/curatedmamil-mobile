@@ -27,7 +27,9 @@ const config: ExpoConfig = {
   android: {
     package: 'com.curatedmamil.dashboard',
     adaptiveIcon: {
-      backgroundColor: '#F3EBE6',
+      // Matches android-icon-background.png (tokens.ink) — Android falls back to this
+      // colour when the background image isn't used.
+      backgroundColor: '#2B2320',
       foregroundImage: './assets/android-icon-foreground.png',
       backgroundImage: './assets/android-icon-background.png',
       monochromeImage: './assets/android-icon-monochrome.png',
@@ -47,7 +49,9 @@ const config: ExpoConfig = {
       {
         backgroundColor: '#F3EBE6',
         image: './assets/splash-icon.png',
-        imageWidth: 160,
+        // The splash keeps the full logo, wordmark and all; 160 rendered the
+        // "Curated By Mami L" line at ~10px tall, which is unreadable.
+        imageWidth: 240,
         resizeMode: 'contain',
       },
     ],

@@ -1,0 +1,29 @@
+name: Build preview APK
+
+on:
+  push:
+    branches: ['main']
+
+concurrency:
+  cancel_in_progress: true
+  # Custom concurrency groups aren't supported yet; this is the placeholder value
+  # Expo asks for so the workflow stays compatible once they are.
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+jobs:
+  typecheck:
+    name: Typecheck
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - run: npm run typecheck
+
+  build_preview:
+    name: Build preview APK
+    # Fail on a type error in ~a minute rather than after a full Android build.
+    needs: [typecheck]
+    type: build
+    params:
+      platform: android
+      # `environment: preview` comes from the profile in eas.json — don't repeat it here.
+      profile: preview

@@ -522,6 +522,49 @@ Skip this and nothing warns you. The build **succeeds** — the missing values i
 Copy .env.example to .env…"*, which is misleading advice on a device that has no `.env`
 to copy. Verify with `eas env:list --environment preview` before building.
 
+### Automatic preview builds on `main`
+
+[.eas/workflows/build-preview.yml](.eas/workflows/build-preview.yml) runs on every push to
+`main`: it typechecks the project, and only if that passes does it build an APK with the
+`preview` profile. The finished build's page on expo.dev carries an install link and QR code —
+that is how a fresh build reaches the owner's phone, no cable and no `expo start` involved.
+
+Typecheck runs first deliberately. There is no test suite here, so `npm run typecheck` is the
+only signal available, and catching a type error in a minute beats catching it after a full
+Android build. Rapid pushes cancel each other rather than queueing, so a burst of commits
+produces one build, not five.
+
+**The workflow does nothing until the repo is linked to the EAS project.** On expo.dev, go to
+the project → Settings → GitHub, install the Expo GitHub App, and select this repository
+(needs Owner or Admin on the Expo account). Until that link exists the YAML sits in the repo
+inert — no error, no run, no warning.
+
+The environment-variable trap above applies with extra force here, because nobody is watching
+an automated build. The `preview` profile sets `"environment": "preview"` and the build job
+inherits it, so if the six `EXPO_PUBLIC_FIREBASE_*` variables aren't in EAS's `preview`
+environment, the workflow goes green and hands you an APK that dies on launch. Check
+`eas env:list --environment preview` once, before relying on any of this.
+
+To skip a run — a README-only commit, say — put `[eas skip]`, `[skip eas]`, or `[no eas]` in
+the commit message.
+
+Note that `on: push` only matches commits on `main`, so a change to the workflow itself has no
+effect until it is merged. To exercise it from a feature branch, run it directly, which ignores
+the `on:` triggers entirely:
+
+```bash
+npx eas-cli@latest workflow:run .eas/workflows/build-preview.yml
+```
+
+**Production releases stay manual**, on purpose: the `production` profile has `autoIncrement`
+on, so building it per-merge would burn a remote `versionCode` every time. Cut a release by
+hand when you actually want one:
+
+```bash
+npx eas-cli@latest build --platform android --profile production
+npx eas-cli@latest submit --platform android --profile production --latest
+```
+
 ---
 
 ## Troubleshooting

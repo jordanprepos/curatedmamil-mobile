@@ -193,12 +193,94 @@ local echo carries `createdAt: null` until the server round-trips. A Firestore
 watch a product they just saved fail to appear — reading as "save failed". Sorting in
 `subscribeProducts` puts pending writes at the top instead.
 
+### SKU generation
+
+The owner never types a SKU. Tambah shows it read-only and `nextSku(products)` in
+[products.ts](src/data/products.ts) derives it: the highest `CBML-<n>` in the catalog, plus
+one, padded to three digits and widening naturally past `CBML-999`.
+
+**Numbering is flat across categories, not per-category.** The seeded catalog runs
+`CBML-001`…`CBML-005` spanning all four categories, and a product's category can be changed
+later while its SKU must not.
+
+SKUs that don't match the pattern are ignored rather than guessed at — the catalog predates
+this generator, and a hand-written `TOTE-A` shouldn't stop the count. The prefix match is
+case-insensitive, so a hand-entered `cbml-006` still counts and won't be reused.
+
+**The screen gates on `productsReady`, not `loading`.** `loading` also waits on the orders
+listener, which Tambah never reads — and a Firestore listener that errors is terminated
+permanently, so a dead orders listener would pin `loading` true forever and leave Simpan
+blocked on data the SKU never needed. `productsReady` was added to
+[store.tsx](src/data/store.tsx) for exactly this. Some gate is required: numbering from an
+empty array restarts at `CBML-001` and collides with everything already on the shelf, and
+`products.length > 0` won't serve as a proxy because an empty catalog is legitimate for the
+first product ever.
+
+The value is captured once per `save()`. It names the uploaded photo objects as well as
+landing on the document, and that upload batch can run for minutes — re-deriving it after
+the loop would let the two drift apart.
+
+**Nothing enforces uniqueness** — not security rules, not an index. Two devices saving at
+the same instant can produce the same number, and deleting the highest-numbered product
+frees it for reuse. Both are accepted rather than solved: this is a single-owner shop, the
+optimistic local echo advances the number immediately on a same-device second save, and
+`Arsip` means deletion is the rare path. A counter document in `shop/` would buy strict
+uniqueness at the cost of an extra write on every save.
+
+### Product photos
+
+A product carries a gallery, not a single picture. Tambah picks several photos at once
+(capped at 8), uploads them one after another, and writes them to `imageUrls` in the order
+they'll be shown; Detail renders them as a swipeable frame with dots underneath.
+
+**`imageUrl` survives alongside `imageUrls`, holding the cover — which is also
+`imageUrls[0]`.** The customer-facing website is a separate repo reading these same
+documents, and it knows only about `imageUrl`; dropping the field would break a consumer
+this repo can't fix in the same commit. Storing the cover in *both* places, rather than
+splitting the array into "the extras", keeps gallery rendering and delete accounting each
+a single list to reason about.
+
+Documents written before galleries existed carry only `imageUrl`; the seeded demo catalog
+carries no photo field at all and renders as monograms, exactly as it did before. There is
+no backfill: `productImages(product)` in
+[products.ts](src/data/products.ts) returns `imageUrls` when present and falls back to the
+lone `imageUrl`, and that helper is the entire migration. Read photos through it rather
+than touching either field directly. The Dasbor and Produk thumbnails are the exception —
+they want the cover specifically, so they still read `imageUrl`.
+
+Two details worth knowing before touching the upload path:
+
+- **Object names carry a per-upload counter**, not just `Date.now()`. A gallery uploads in
+  one batch, and two photos starting inside the same millisecond would otherwise resolve
+  to the same object path — the second silently overwriting the first, leaving the gallery
+  showing one picture twice.
+- **The 90s timeout is per photo**, not per batch. One budget shared across eight uploads
+  fires somewhere mid-batch on a slow connection and blames "unggah terlalu lama" on a
+  photo that never started.
+
+A failed upload aborts the whole save rather than publishing a partial gallery, and the
+photos that already landed are deleted best-effort on the way out — without that, an owner
+retrying a save that keeps failing on photo 3 orphans two more objects each time.
+
+The URL FOTO field no longer suppresses the picked photos. A pasted URL is simply the first
+entry in the gallery, and therefore the cover: it's the one the owner typed by hand, so it's
+the deliberate choice of the two sources.
+
+Note the crop step is gone from the picker. `expo-image-picker` documents `allowsEditing`
+and `allowsMultipleSelection` as mutually exclusive, and silently ignores the former once
+the latter is on.
+
+**There is still no way to add or remove a photo on an existing product.** The `Ubah`
+button on Detail pushes `/tambah` without loading the product into it — a pre-existing
+stub, not something galleries introduced.
+
 ### Deleting a product
 
-`Hapus Produk` on Detail removes the Firestore document, then deletes the uploaded photo
+`Hapus Produk` on Detail removes the Firestore document, then deletes the uploaded photos
 best-effort. The order matters: the document is the record the owner watches disappear, so
 a failed photo delete costs at most an orphaned object, while the reverse order risks a
-product whose photo is already gone. `deleteProductImage` never rejects and is not awaited.
+product whose photos are already gone. `deleteProductImages` never rejects and is not
+awaited.
 
 Two guards sit in front of that photo delete, because `imageUrl` is not necessarily ours —
 the URL FOTO field accepts any hosted image, and the storage path is never persisted, only
@@ -208,8 +290,11 @@ the download URL:
   with a single-segment `products/` path. It deliberately does *not* use `ref(storage, url)`:
   that helper also accepts `storage.googleapis.com/<any-bucket>/<path>`, so a pasted link to
   an unrelated public bucket would hand back a valid reference to someone else's file.
-- **The caller skips the delete when another product shares the same `imageUrl`**, which
-  URL FOTO makes possible.
+- **The caller skips any URL another product still displays**, which URL FOTO makes
+  possible. The comparison is against the union of `productImages(p)` over every *other*
+  product, not against their covers alone: a URL that is this product's cover may well be
+  the third photo in another product's gallery, and deleting it would blank out a picture
+  that product still shows.
 
 The screen also carries a `removed` ref. `deleteDoc` applies to the local cache before its
 promise settles, so `products` drops the document while the write is still in flight — and
@@ -285,10 +370,11 @@ The Firestore database lives in `asia-southeast2` (Jakarta), closest to the shop
 ```
 products/{id}   name: string
                 price: number        integer rupiah — NOT a display string
-                sku: string
+                sku: string          generated — see SKU generation
                 status: 'Aktif' | 'Ditahan' | 'Terjual' | 'Arsip' | 'Draf'
                 cat: 'Tote' | 'Selempang' | 'Clutch' | 'Bahu'
-                imageUrl?: string
+                imageUrl?: string    the cover photo — also imageUrls[0]
+                imageUrls?: string[] every photo, cover first, in display order
                 createdAt, updatedAt, soldAt?: Timestamp
 
 orders/{id}     buyer: string
@@ -449,6 +535,10 @@ its own project.
   enabled. This project is on Blaze and upload works; the Tambah screen's **URL FOTO**
   field is not in the original mockup and was added to cover the Spark-plan gap. It is
   kept as a fallback for when the owner already has a hosted image.
+- **Photos and SKU can only be set when a product is created.** `Ubah` on Detail Produk
+  pushes `/tambah` without loading the product into it — a stub that predates both the
+  gallery and SKU generation. There is no edit screen, so an existing product's photos
+  can't be added to or reordered, and its SKU can't be corrected from the app.
 - **The Firestore emulator needs JDK 21+**; this machine has JDK 8, so `npm run emulators`
   will fail until a newer JDK is installed (`brew install openjdk@21`). Everything else
   runs against the live project and is unaffected.
@@ -481,7 +571,12 @@ app — but each of these is worth knowing before you "fix" one.
    `Arsipkan Produk` pops back to Dasbor, matching the mockup's `archive`.
 9. **`Hapus Produk` is new.** The mockup had no delete at all — `Arsip` is only a status, so
    nothing ever left the collection. It removes the Firestore document and, best-effort, the
-   uploaded photo, behind a confirmation modal. See [Deleting a product](#deleting-a-product).
+   uploaded photos, behind a confirmation modal. See [Deleting a product](#deleting-a-product).
+10. **SKU is generated, not typed.** The mockup had it as a free-text field with placeholder
+    `CBML-007`. It is now derived from the catalog and read-only — see
+    [SKU generation](#sku-generation).
+11. **A product carries a gallery, not one photo.** The mockup's `<image-slot>` held a single
+    image. See [Product photos](#product-photos).
 
 The mockup's own scaffolding — `ios-frame.jsx` (device bezel, dynamic island, drawn status
 bar) and `image-slot.js` (a drag-and-drop placeholder backed by a JSON sidecar in the

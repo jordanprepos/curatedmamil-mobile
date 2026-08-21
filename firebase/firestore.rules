@@ -1,6 +1,10 @@
 rules_version = '2';
 
-// Curated by Mami L — owner-only seller dashboard.
+// Curated by Mami L — owner-only seller dashboard, plus a public storefront.
+//
+// This file and web-curatedmamil/firestore.rules both deploy to mamiel-project,
+// so they must stay identical — the last `firebase deploy` wins. Any change
+// here needs the same change there.
 //
 // Access is gated on the presence of an owners/{uid} marker document rather
 // than a hardcoded UID, so access can be granted or revoked from the console
@@ -13,16 +17,30 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/owners/$(request.auth.uid));
     }
 
+    // The public website reads this collection, so bags that are on the shelf
+    // are world-readable. Anything not "Aktif" — sold, archived, on hold —
+    // stays private, and every write is still owner-only.
+    //
+    // Note this constrains queries as well as gets: a client listing this
+    // collection must filter on status == "Aktif" or the read is rejected.
     match /products/{productId} {
-      allow read, write: if isOwner();
+      allow read: if resource.data.status == 'Aktif' || isOwner();
+      allow write: if isOwner();
     }
 
     match /orders/{orderId} {
       allow read, write: if isOwner();
     }
 
+    // shop/config holds the storefront's own settings — the WhatsApp number set
+    // on the "Lainnya" tab, and the shop name — so the public website reads it
+    // to build its wa.me links. Rules cannot hide individual fields on a read:
+    // EVERYTHING in shop/config is world-readable, so keep anything private in
+    // a different document. Other shop/* documents stay owner-only, and every
+    // write is owner-only.
     match /shop/{docId} {
-      allow read, write: if isOwner();
+      allow read: if docId == 'config' || isOwner();
+      allow write: if isOwner();
     }
 
     // Readable only by the owner it describes; writes are console/admin only.

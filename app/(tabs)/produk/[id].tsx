@@ -1,5 +1,13 @@
 import { useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,9 +16,9 @@ import { PillButton } from '../../../src/components/PillButton';
 import { ProductImage } from '../../../src/components/ProductImage';
 import { StatusPill } from '../../../src/components/StatusPill';
 import { useShopData } from '../../../src/data/store';
-import { deleteProduct, setProductStatus } from '../../../src/data/products';
+import { deleteProduct, productImages, setProductStatus } from '../../../src/data/products';
 import { rupiah } from '../../../src/lib/format';
-import { deleteProductImage } from '../../../src/lib/storage';
+import { deleteProductImages } from '../../../src/lib/storage';
 import { withWriteTimeout, writeErrorMessage } from '../../../src/lib/write';
 import { Display, Label, Txt } from '../../../src/theme/text';
 import { colors, radius, space } from '../../../src/theme/tokens';
@@ -97,10 +105,20 @@ export default function DetailProduk() {
     if (!product) return;
     // Captured before the await: `product` resolves from `products`, which this
     // delete is about to empty.
-    const { id: productId, imageUrl } = product;
-    // URL FOTO makes it possible to paste one product's photo onto another, and
-    // that object must survive this delete.
-    const imageIsShared = products.some((p) => p.id !== productId && p.imageUrl === imageUrl);
+    const productId = product.id;
+    /*
+      URL FOTO makes it possible to paste one product's photo onto another, and
+      those objects must survive this delete.
+
+      The comparison is against every photo of every *other* product, not just
+      their covers: a URL that is this product's cover may well be the third
+      photo in another product's gallery, and deleting it would blank out a
+      picture that product still displays.
+    */
+    const keep = new Set(
+      products.filter((p) => p.id !== productId).flatMap((p) => productImages(p)),
+    );
+    const doomedImages = productImages(product).filter((url) => !keep.has(url));
 
     setBusy('delete');
     setDeleteError(null);
@@ -108,9 +126,9 @@ export default function DetailProduk() {
 
     try {
       await withWriteTimeout(deleteProduct(productId));
-      // Fire-and-forget: `deleteProductImage` never rejects, and an orphaned
+      // Fire-and-forget: `deleteProductImages` never rejects, and an orphaned
       // object isn't worth delaying the screen the owner is leaving.
-      if (!imageIsShared) void deleteProductImage(imageUrl);
+      void deleteProductImages(doomedImages);
       setConfirmingDelete(false);
       router.replace('/');
     } catch (e) {
@@ -155,14 +173,7 @@ export default function DetailProduk() {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 16, paddingHorizontal: space.screenX }}
       >
-        <View style={{ height: 220 }}>
-          <ProductImage
-            uri={product.imageUrl}
-            name={product.name}
-            radius={radius.card}
-            monogramSize={42}
-          />
-        </View>
+        <Gallery images={productImages(product)} name={product.name} />
 
         <View
           style={{
@@ -306,6 +317,84 @@ export default function DetailProduk() {
           </Pressable>
         </Pressable>
       </Modal>
+    </View>
+  );
+}
+
+/**
+ * The product's photos as one swipeable frame, with dots when there is more than
+ * one. A single photo (or none) renders exactly what this screen showed before
+ * galleries existed — the monogram fallback included, via `ProductImage`.
+ *
+ * The page width is measured rather than taken from `Dimensions`: this sits
+ * inside the screen's horizontal padding, so the window width would overshoot
+ * and every page would settle mid-photo. Until the first layout pass reports a
+ * width, only the cover is rendered — a paging ScrollView with pages of width 0
+ * has no snap positions to land on.
+ */
+function Gallery({ images, name }: { images: string[]; name: string }) {
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
+
+  function onLayout(e: LayoutChangeEvent) {
+    setWidth(e.nativeEvent.layout.width);
+  }
+
+  function onScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!width) return;
+    setPage(Math.round(e.nativeEvent.contentOffset.x / width));
+  }
+
+  if (images.length < 2 || !width) {
+    return (
+      <View style={{ height: 220 }} onLayout={onLayout}>
+        <ProductImage uri={images[0]} name={name} radius={radius.card} monogramSize={42} />
+      </View>
+    );
+  }
+
+  return (
+    <View onLayout={onLayout}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        style={{ height: 220 }}
+      >
+        {images.map((uri, i) => (
+          <View key={`${uri}-${i}`} style={{ width, height: 220 }}>
+            <ProductImage
+              uri={uri}
+              name={name}
+              radius={radius.card}
+              monogramSize={42}
+            />
+          </View>
+        ))}
+      </ScrollView>
+
+      <View
+        style={{
+          flexDirection: 'row',
+          alignSelf: 'center',
+          gap: 6,
+          marginTop: 12,
+        }}
+      >
+        {images.map((uri, i) => (
+          <View
+            key={`dot-${uri}-${i}`}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: i === page ? colors.primary : colors.border,
+            }}
+          />
+        ))}
+      </View>
     </View>
   );
 }

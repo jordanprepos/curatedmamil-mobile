@@ -17,6 +17,16 @@ type ShopData = {
   orders: Order[];
   shop: ShopConfig;
   loading: boolean;
+  /**
+   * True once the products snapshot has arrived, independent of `loading`.
+   *
+   * `loading` also waits on the orders listener, and a listener that errors is
+   * terminated permanently (see below) — so a dead orders listener pins
+   * `loading` true forever. Anything that needs the catalog specifically, like
+   * Tambah deriving the next SKU from it, must gate on this instead or it stays
+   * blocked on data it never needed.
+   */
+  productsReady: boolean;
   /** Set when a listener fails — surfaced in Indonesian on the screens. */
   error: string | null;
 };
@@ -95,6 +105,7 @@ export function ShopDataProvider({ children }: { children: ReactNode }) {
       orders,
       shop,
       loading: !productsReady || !ordersReady,
+      productsReady,
       error,
     }),
     [products, orders, shop, productsReady, ordersReady, error],

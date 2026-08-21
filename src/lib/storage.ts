@@ -15,9 +15,15 @@ export async function uploadProductImage(localUri: string, sku: string): Promise
 
   const contentType = blob.type || 'image/jpeg';
   const safeSku = sku.trim().replace(/[^A-Za-z0-9_-]/g, '') || 'produk';
+  /*
+    A product now uploads a whole gallery in one go, and `Date.now()` alone
+    repeats across photos that start within the same millisecond — the second
+    upload would silently overwrite the first and the gallery would show the
+    same picture twice. The counter makes each object path unique within a run.
+  */
   const objectRef = ref(
     storage,
-    `products/${safeSku}-${Date.now()}.${extensionFor(contentType, localUri)}`,
+    `products/${safeSku}-${Date.now()}-${nextSuffix()}.${extensionFor(contentType, localUri)}`,
   );
 
   // storage.rules requires an `image/*` contentType. `fetch()` on a native
@@ -25,6 +31,13 @@ export async function uploadProductImage(localUri: string, sku: string): Promise
   // application/octet-stream and gets rejected — so it is always set here.
   await uploadBytes(objectRef, blob, { contentType });
   return getDownloadURL(objectRef);
+}
+
+/** Monotonic within a session; only ever needs to disambiguate one batch. */
+let uploadCounter = 0;
+function nextSuffix(): string {
+  uploadCounter += 1;
+  return uploadCounter.toString(36);
 }
 
 /**
@@ -55,6 +68,16 @@ function extensionFor(contentType: string, localUri: string): string {
   // like one rather than trusting whatever followed the last dot.
   const tail = localUri.split('?')[0].split('.').pop() ?? '';
   return /^[A-Za-z0-9]{2,5}$/.test(tail) ? tail.toLowerCase() : 'jpg';
+}
+
+/**
+ * Best-effort removal of every photo in a product's gallery. Never rejects.
+ *
+ * The caller is responsible for filtering out URLs another product still
+ * displays — see `confirmDelete` on Detail Produk.
+ */
+export async function deleteProductImages(imageUrls: readonly string[]): Promise<void> {
+  await Promise.all(imageUrls.map((url) => deleteProductImage(url)));
 }
 
 /**

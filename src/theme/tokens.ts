@@ -53,14 +53,41 @@ export const statusColors: Record<Status, Pair> = {
   Draf: { bg: '#F0EDEB', fg: '#8C7D75' },
 };
 
-export const ORDER_STATES = ['Baru', 'Dikirim', 'Selesai'] as const;
+/**
+ * `Dibatalkan` is not in the mockup, which had no way to cancel an order. It is
+ * a real state on the document rather than a local flag — see `cancelOrder`.
+ */
+export const ORDER_STATES = ['Baru', 'Dikirim', 'Selesai', 'Dibatalkan'] as const;
 export type OrderState = (typeof ORDER_STATES)[number];
 
 export const orderStateColors: Record<OrderState, Pair> = {
   Baru: { bg: '#F1E4E2', fg: '#A07D77' },
   Dikirim: { bg: '#E7EEF6', fg: '#5A7CA0' },
   Selesai: { bg: '#E8F1E9', fg: '#4F7D5E' },
+  Dibatalkan: { bg: '#F6E6E4', fg: '#B4675F' },
 };
+
+/**
+ * The cancel affordance on Pesanan: a tertiary button and the confirmation
+ * panel it opens.
+ *
+ * A softer red than `colors.danger` (#B4524B), which `Hapus Produk` uses. That
+ * distinction is deliberate — deleting a product is irreversible, while a
+ * cancelled order can be restored with `Aktifkan lagi`.
+ */
+export const cancelColors = {
+  /** Outline of the resting "Batalkan pesanan" button. */
+  border: '#EBD8D5',
+  /** Its label, and the fill of the confirming "Ya, batalkan". */
+  accent: '#B4675F',
+  /** Pressed fill of "Ya, batalkan", darkened by the same step as
+   *  `colors.primary` → `colors.primaryPressed`. */
+  accentPressed: '#A2554D',
+  /** Pressed state of the button; background of the confirmation panel. */
+  surface: '#FBEFEE',
+  /** Body copy inside the panel. */
+  text: '#8A5C56',
+} as const;
 
 /** Accent dots on the Ringkasan stat tiles. */
 export const statDotColors = {

@@ -193,6 +193,43 @@ local echo carries `createdAt: null` until the server round-trips. A Firestore
 watch a product they just saved fail to appear — reading as "save failed". Sorting in
 `subscribeProducts` puts pending writes at the top instead.
 
+### Orders: grouping and cancellation
+
+Pesanan renders orders in four fixed status groups — Perlu dibalas (`Baru`), Sedang dikirim
+(`Dikirim`), Selesai, Dibatalkan — each with a coloured dot, a count pill and a grey
+sub-line. Groups with no orders are not rendered at all: no empty states, no zero counts.
+
+**Cancellation is a real state on the document, not client-side state.** The spec this was
+built from described `cancelledOrders: {}` in component state alongside an existing
+`doneOrders: {}` — but that spec was written against the HTML mockup, and this port has no
+`doneOrders`: `markDone` already writes `state: 'Selesai'` to Firestore. Holding
+cancellation locally would mean it vanished on an app restart, never reached the owner's
+other device, and — the concrete bug — left `countNewOrders` still counting a cancelled
+order as new, so the Dasbor bag badge would disagree with the group the card sits in.
+
+`cancelOrder(id, currentState)` writes `state: 'Dibatalkan'` and stashes the previous value
+in `stateBeforeCancel`; `restoreOrder` puts it back and clears the field with
+`deleteField()`. That satisfies the spec's actual requirement — the original value is never
+overwritten, so **Aktifkan lagi** restores it — while keeping `state` the single source of
+truth for every reader. Restore falls back to `Baru` when `stateBeforeCancel` is missing,
+which is what an order cancelled by hand in the Firebase console looks like.
+
+Only `confirmCancelId` is local component state, and correctly so: a half-finished
+confirmation belongs to this screen right now, not to the order. One card confirms at a
+time. The panel is dismissed **after** the write is acknowledged, not on tap — clearing it
+first would make a failed cancel look like it worked while the card sat in its old group.
+
+Cards move between groups without a reload for free: `updateDoc` applies to the local cache
+before its promise settles, so the snapshot re-renders immediately. No local overlay state
+is needed to achieve it, and none is used. Ordering within a group is stable too —
+`subscribeOrders` sorts server-side on `createdAt desc` and none of these writes touch
+`createdAt`, so the pending-`serverTimestamp()` hazard that forced client-side sorting for
+products doesn't apply here.
+
+Note `orders` is owner-only in `firestore.rules` (`allow read, write: if isOwner()`), with
+no field validation — so widening the state union needed no rules change and has no public
+storefront consumer, unlike the product shape.
+
 ### SKU generation
 
 The owner never types a SKU. Tambah shows it read-only and `nextSku(products)` in
@@ -380,7 +417,8 @@ products/{id}   name: string
 orders/{id}     buyer: string
                 itemName: string
                 price: number
-                state: 'Baru' | 'Dikirim' | 'Selesai'
+                state: 'Baru' | 'Dikirim' | 'Selesai' | 'Dibatalkan'
+                stateBeforeCancel?: OrderState   set only while Dibatalkan
                 phone?: string       international format, no '+'
                 createdAt: Timestamp
 
@@ -577,6 +615,9 @@ app — but each of these is worth knowing before you "fix" one.
     [SKU generation](#sku-generation).
 11. **A product carries a gallery, not one photo.** The mockup's `<image-slot>` held a single
     image. See [Product photos](#product-photos).
+12. **Pesanan groups orders by status and can cancel one.** The mockup had a flat list and
+    no cancel action at all. See
+    [Orders: grouping and cancellation](#orders-grouping-and-cancellation).
 
 The mockup's own scaffolding — `ios-frame.jsx` (device bezel, dynamic island, drawn status
 bar) and `image-slot.js` (a drag-and-drop placeholder backed by a JSON sidecar in the

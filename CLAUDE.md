@@ -53,13 +53,18 @@ products/{id}   name, price (integer rupiah, NOT a display string),
                 imageUrl? (the cover, = imageUrls[0]), imageUrls? (all photos,
                 cover first — read both through `productImages`, old docs have
                 only imageUrl), createdAt, updatedAt, soldAt?
-orders/{id}     buyer, itemName, price, state: Baru | Dikirim | Selesai,
+orders/{id}     buyer, itemName, price,
+                state: Baru | Dikirim | Selesai | Dibatalkan,
+                stateBeforeCancel? (set only while Dibatalkan),
                 phone? (international format, no '+'), createdAt
 shop/config     whatsappNumber, shopName
 owners/{uid}    email, grantedAt  — presence of this doc IS the authorization
 ```
 Rupiah grouping in [src/lib/format.ts](src/lib/format.ts) is done by hand rather than `Intl.NumberFormat` — Hermes ships a trimmed ICU and locale support varies by platform. Don't "simplify" it to `Intl`.
 Every Firestore/Storage rule gates on `exists(/databases/$(database)/documents/owners/$(request.auth.uid))` — access is granted/revoked by adding/removing that marker doc (e.g. via console), not by editing rules. The `owners` collection is never client-writable. `storage.rules` mirrors this and additionally caps uploads at 8 MB / requires `image/*`.
+
+### Orders
+Pesanan groups orders into four fixed status groups (`Baru`/`Dikirim`/`Selesai`/`Dibatalkan`), hiding empty ones. **Cancellation is a state on the document, not component state** — `cancelOrder` writes `state: 'Dibatalkan'` plus `stateBeforeCancel`, and `restoreOrder` puts the old value back and clears the field. Don't "simplify" this to a local `cancelledOrders` map: `countNewOrders` (and the Dasbor bag badge through it) reads `state`, so a client-side flag would leave a cancelled order still counted as new, and the cancellation would not survive a restart or reach another device. Only `confirmCancelId` is local, and the confirm panel is dismissed *after* the write settles so a failed cancel doesn't look successful. Cards move between groups on the optimistic local echo — no overlay state needed. `orders` is owner-only with no field validation, so widening `OrderState` needed no rules change. See the README's [Orders: grouping and cancellation](README.md#orders-grouping-and-cancellation).
 
 ### SKU generation
 The owner never types a SKU: Tambah renders it read-only and `nextSku(products)` ([src/data/products.ts](src/data/products.ts)) returns the highest `CBML-<n>` in the catalog plus one, padded to 3 and widening past `CBML-999`. Numbering is flat across categories (the seed runs `CBML-001`…`005` over all four, and a product's category can change while its SKU must not); non-matching SKUs are skipped, and the prefix match is case-insensitive so a hand-entered `cbml-006` isn't reused.

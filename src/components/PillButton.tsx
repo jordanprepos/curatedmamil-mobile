@@ -18,6 +18,25 @@ type Props = {
   style?: ViewStyle;
   /** `plain` chips in the mockup carry the same soft card shadow. */
   shadow?: boolean;
+  /**
+   * Recolours the button without adding a variant for it.
+   *
+   * Exists for Pesanan's cancel affordance, whose soft red (`cancelColors`) is
+   * neither the mauve of `outline` nor the harder `colors.danger` of `Hapus
+   * Produk`. It covers both the tertiary outline and the solid confirm button.
+   *
+   * Deliberately a prop rather than something passed through `style`: `style`
+   * lands after the variant's own rules, so a background set there also wins
+   * over the *pressed* background and the button goes dead to the touch. These
+   * are applied inside the pressed-aware block instead, so press feedback
+   * survives — set `pressedBg` alongside `bg` or the fill won't move on touch.
+   */
+  tone?: {
+    bg?: string;
+    pressedBg?: string;
+    border?: string;
+    label?: string;
+  };
 };
 
 export function PillButton({
@@ -32,13 +51,19 @@ export function PillButton({
   disabled,
   style,
   shadow,
+  tone,
 }: Props) {
   const isDisabled = disabled || loading;
 
   // `primary` reverses out on the filled pill; `danger` carries the warning in
   // the label, since an outline alone doesn't say "this is destructive".
   const labelColor =
-    variant === 'primary' ? colors.onPrimary : variant === 'danger' ? colors.danger : colors.subtle;
+    tone?.label ??
+    (variant === 'primary'
+      ? colors.onPrimary
+      : variant === 'danger'
+        ? colors.danger
+        : colors.subtle);
 
   return (
     <Pressable
@@ -75,6 +100,12 @@ export function PillButton({
                 borderColor: colors.danger,
               }
             : null),
+          // After the variant blocks, so a `tone` overrides them — but still
+          // inside the pressed-aware function, unlike `style`.
+          ...(tone?.bg
+            ? { backgroundColor: pressed ? (tone.pressedBg ?? tone.bg) : tone.bg }
+            : null),
+          ...(tone?.border ? { borderWidth: 1, borderColor: tone.border } : null),
           opacity: isDisabled ? 0.55 : 1,
         },
         shadow ? cardShadow : null,
@@ -88,11 +119,12 @@ export function PillButton({
             // Not `labelColor`: outline/plain spinners are mauve, not their
             // muted label grey. Only `danger` follows its label.
             color={
-              variant === 'primary'
+              tone?.label ??
+              (variant === 'primary'
                 ? colors.onPrimary
                 : variant === 'danger'
                   ? colors.danger
-                  : colors.primary
+                  : colors.primary)
             }
           />
         </View>

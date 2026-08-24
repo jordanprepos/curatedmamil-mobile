@@ -8,7 +8,6 @@ import { OrderStatePill } from '../../src/components/StatusPill';
 import { useShopData } from '../../src/data/store';
 import {
   cancelOrder,
-  countNewOrders,
   restoreOrder,
   setOrderState,
   type Order,
@@ -53,6 +52,9 @@ const GROUPS: { state: OrderState; heading: string; sub: string }[] = [
   },
 ];
 
+/** The states GROUPS already covers, so the catch-all can skip them. */
+const KNOWN_STATES = new Set<string>(GROUPS.map((g) => g.state));
+
 export default function Pesanan() {
   const insets = useSafeAreaInsets();
   const { orders, shop, loading, error } = useShopData();
@@ -68,7 +70,20 @@ export default function Pesanan() {
    */
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 
-  const newCount = countNewOrders(orders);
+  /**
+   * Orders bucketed by `state` in a single pass. Insertion order preserves the
+   * `createdAt desc` sort Firestore already applied (and none of the writes here
+   * touch `createdAt`), so cards stay put within a group. States outside the four
+   * known GROUPS still land here and are rendered under a catch-all below — a
+   * hand-edited console value or a future state never silently disappears.
+   */
+  const byState = new Map<string, Order[]>();
+  for (const o of orders) {
+    const bucket = byState.get(o.state);
+    if (bucket) bucket.push(o);
+    else byState.set(o.state, [o]);
+  }
+  const newCount = byState.get('Baru')?.length ?? 0;
 
   /**
    * Same deep link as the mockup's `onChat`, with `window.open` swapped for
@@ -107,6 +122,10 @@ export default function Pesanan() {
       // "cancelled" while the order is still sitting in its old group.
       setConfirmCancelId(null);
     } catch (e) {
+      // The optimistic write has rolled back, so the card is back in its old
+      // group. Close the panel too — leaving it open beside the error banner
+      // reads as a half-applied cancel.
+      setConfirmCancelId(null);
       setActionError(writeErrorMessage(e, 'Gagal membatalkan pesanan. Coba lagi.'));
     }
   }
@@ -120,6 +139,40 @@ export default function Pesanan() {
     }
   }
 
+  /** One status section: coloured header plus its order cards. Empty or absent
+   *  groups render nothing. Shared by the known GROUPS and the catch-all. */
+  function renderGroup(
+    state: string,
+    heading: string,
+    sub: string,
+    inGroup: Order[] | undefined,
+  ) {
+    if (!inGroup || inGroup.length === 0) return null;
+
+    return (
+      <View key={state} style={{ gap: 10 }}>
+        <GroupHeader state={state} heading={heading} sub={sub} count={inGroup.length} />
+
+        {inGroup.map((o) => (
+          <OrderCard
+            key={o.id}
+            order={o}
+            confirming={confirmCancelId === o.id}
+            onChat={() => chat(o)}
+            onDone={() => markDone(o)}
+            onAskCancel={() => {
+              setActionError(null);
+              setConfirmCancelId(o.id);
+            }}
+            onDismissCancel={() => setConfirmCancelId(null)}
+            onConfirmCancel={() => cancel(o)}
+            onRestore={() => restore(o)}
+          />
+        ))}
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgApp }}>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: space.screenX }}>
@@ -129,9 +182,11 @@ export default function Pesanan() {
         <Txt size={14} weight={300} color={colors.muted} style={{ marginTop: 2 }}>
           {loading
             ? 'Memuat…'
-            : newCount > 0
-              ? `${newCount} pesanan perlu dibalas`
-              : 'Semua pesanan sudah ditangani'}
+            : orders.length === 0
+              ? 'Belum ada pesanan'
+              : newCount > 0
+                ? `${newCount} pesanan perlu dibalas`
+                : 'Semua pesanan sudah ditangani'}
         </Txt>
       </View>
 
@@ -150,40 +205,19 @@ export default function Pesanan() {
           </Txt>
         ) : null}
 
-        {GROUPS.map(({ state, heading, sub }) => {
-          // Firestore already sorts by createdAt desc, and none of the writes
-          // here touch createdAt — so order within a group stays put.
-          const inGroup = orders.filter((o) => o.state === state);
-          if (inGroup.length === 0) return null;
+        {GROUPS.map(({ state, heading, sub }) =>
+          renderGroup(state, heading, sub, byState.get(state)),
+        )}
 
-          return (
-            <View key={state} style={{ gap: 10 }}>
-              <GroupHeader
-                state={state}
-                heading={heading}
-                sub={sub}
-                count={inGroup.length}
-              />
-
-              {inGroup.map((o) => (
-                <OrderCard
-                  key={o.id}
-                  order={o}
-                  confirming={confirmCancelId === o.id}
-                  onChat={() => chat(o)}
-                  onDone={() => markDone(o)}
-                  onAskCancel={() => {
-                    setActionError(null);
-                    setConfirmCancelId(o.id);
-                  }}
-                  onDismissCancel={() => setConfirmCancelId(null)}
-                  onConfirmCancel={() => cancel(o)}
-                  onRestore={() => restore(o)}
-                />
-              ))}
-            </View>
-          );
-        })}
+        {/* Anything whose state isn't one of the four GROUPS — a value edited by
+            hand in the console, a legacy doc, or a state added in a later version.
+            Shown under its own heading rather than dropped, so it stays visible
+            and actionable. */}
+        {[...byState.keys()]
+          .filter((state) => !KNOWN_STATES.has(state))
+          .map((state) =>
+            renderGroup(state, state, 'Status tidak dikenal', byState.get(state)),
+          )}
 
         {!loading && !error && orders.length === 0 ? (
           <Txt
@@ -208,12 +242,14 @@ function GroupHeader({
   sub,
   count,
 }: {
-  state: OrderState;
+  state: string;
   heading: string;
   sub: string;
   count: number;
 }) {
-  const c = orderStateColors[state];
+  // Falls back like OrderStatePill, so a catch-all group with an unknown state
+  // still gets a dot and pill colour instead of crashing on `undefined`.
+  const c = orderStateColors[state as OrderState] ?? orderStateColors.Baru;
 
   return (
     <View>

@@ -8,6 +8,7 @@ import { OrderStatePill } from '../../src/components/StatusPill';
 import { useShopData } from '../../src/data/store';
 import {
   cancelOrder,
+  countNewOrders,
   restoreOrder,
   setOrderState,
   type Order,
@@ -21,6 +22,7 @@ import {
   orderStateColors,
   radius,
   space,
+  statusColors,
   type OrderState,
 } from '../../src/theme/tokens';
 
@@ -83,7 +85,23 @@ export default function Pesanan() {
     if (bucket) bucket.push(o);
     else byState.set(o.state, [o]);
   }
-  const newCount = byState.get('Baru')?.length ?? 0;
+  // Counted through the shared helper, not `byState`, so "new" stays defined in
+  // one place — the Dasbor badge (index.tsx) reads it too and the two must agree.
+  const newCount = countNewOrders(orders);
+
+  /**
+   * The small caption under the title. Null when the body already tells the
+   * story — a listener error surfaces its own banner below, and an empty catalog
+   * shows its own "Belum ada pesanan" — so the header never contradicts or
+   * duplicates it.
+   */
+  const subtitle = loading
+    ? 'Memuat…'
+    : error || orders.length === 0
+      ? null
+      : newCount > 0
+        ? `${newCount} pesanan perlu dibalas`
+        : 'Semua pesanan sudah ditangani';
 
   /**
    * Same deep link as the mockup's `onChat`, with `window.open` swapped for
@@ -122,9 +140,11 @@ export default function Pesanan() {
       // "cancelled" while the order is still sitting in its old group.
       setConfirmCancelId(null);
     } catch (e) {
-      // The optimistic write has rolled back, so the card is back in its old
-      // group. Close the panel too — leaving it open beside the error banner
-      // reads as a half-applied cancel.
+      // Close the panel whatever went wrong. On a rejection (e.g.
+      // permission-denied) the optimistic cancel is rolled back and the card
+      // returns to its old group; on a timeout the write stays queued and the
+      // card stays in Dibatalkan showing "Aktifkan lagi" — in neither case
+      // should the confirm panel linger beside the error banner.
       setConfirmCancelId(null);
       setActionError(writeErrorMessage(e, 'Gagal membatalkan pesanan. Coba lagi.'));
     }
@@ -179,15 +199,11 @@ export default function Pesanan() {
         <Txt size={26} weight={600}>
           Pesanan
         </Txt>
-        <Txt size={14} weight={300} color={colors.muted} style={{ marginTop: 2 }}>
-          {loading
-            ? 'Memuat…'
-            : orders.length === 0
-              ? 'Belum ada pesanan'
-              : newCount > 0
-                ? `${newCount} pesanan perlu dibalas`
-                : 'Semua pesanan sudah ditangani'}
-        </Txt>
+        {subtitle ? (
+          <Txt size={14} weight={300} color={colors.muted} style={{ marginTop: 2 }}>
+            {subtitle}
+          </Txt>
+        ) : null}
       </View>
 
       <ScrollView
@@ -215,9 +231,12 @@ export default function Pesanan() {
             and actionable. */}
         {[...byState.keys()]
           .filter((state) => !KNOWN_STATES.has(state))
-          .map((state) =>
-            renderGroup(state, state, 'Status tidak dikenal', byState.get(state)),
-          )}
+          .map((state) => {
+            // A doc with a missing `state` buckets under `undefined`; label it so
+            // the section still has a heading, a stable key, and a real pill.
+            const label = state || 'Tanpa status';
+            return renderGroup(label, label, 'Status tidak dikenal', byState.get(state));
+          })}
 
         {!loading && !error && orders.length === 0 ? (
           <Txt
@@ -247,9 +266,9 @@ function GroupHeader({
   sub: string;
   count: number;
 }) {
-  // Falls back like OrderStatePill, so a catch-all group with an unknown state
-  // still gets a dot and pill colour instead of crashing on `undefined`.
-  const c = orderStateColors[state as OrderState] ?? orderStateColors.Baru;
+  // Unknown catch-all states get the neutral grey Arsip pair, not Baru's pink —
+  // a stale/unrecognised status must not wear the "needs attention" colour.
+  const c = orderStateColors[state as OrderState] ?? statusColors.Arsip;
 
   return (
     <View>

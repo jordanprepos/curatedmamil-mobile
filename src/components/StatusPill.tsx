@@ -59,6 +59,10 @@ export function OrderStatePill({
   size?: number;
   style?: ViewStyle;
 }) {
-  const c = orderStateColors[state] ?? orderStateColors.Baru;
-  return <Pill label={state} bg={c.bg} fg={c.fg} size={size ?? 12} style={style} />;
+  // Unknown/missing states get the neutral grey Arsip pair and a named label,
+  // not Baru's "needs attention" pink or a blank pill.
+  const c = orderStateColors[state] ?? statusColors.Arsip;
+  return (
+    <Pill label={state || 'Tanpa status'} bg={c.bg} fg={c.fg} size={size ?? 12} style={style} />
+  );
 }

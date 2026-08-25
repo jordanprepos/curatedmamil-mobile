@@ -1,8 +1,14 @@
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
+import { compressForUpload } from './image';
 
 /**
  * Uploads a picked product photo and returns its public download URL.
+ *
+ * The photo is downscaled and re-encoded first (`compressForUpload`), so what
+ * lands in the bucket is a catalogue-sized JPEG rather than the phone's original
+ * frame. That happens here rather than at the call site so every caller gets it,
+ * and so the 8 MB ceiling in `storage.rules` stays effectively unreachable.
  *
  * NOTE: a Cloud Storage bucket is only provisioned on the Blaze (pay-as-you-go)
  * plan. Until billing is enabled on the Firebase project this throws, and the
@@ -10,10 +16,16 @@ import { storage } from './firebase';
  * works on the free Spark plan.
  */
 export async function uploadProductImage(localUri: string, sku: string): Promise<string> {
-  const response = await fetch(localUri);
+  // Downscale before the bytes ever hit the network. Falls back to the original
+  // URI if it can't, so a photo the encoder rejects still uploads.
+  const prepared = await compressForUpload(localUri);
+
+  const response = await fetch(prepared.uri);
   const blob = await response.blob();
 
-  const contentType = blob.type || 'image/jpeg';
+  // `prepared.contentType` is only set when we did the re-encoding ourselves and
+  // therefore know the format; otherwise fall back to sniffing the blob.
+  const contentType = prepared.contentType || blob.type || 'image/jpeg';
   const safeSku = sku.trim().replace(/[^A-Za-z0-9_-]/g, '') || 'produk';
   /*
     A product now uploads a whole gallery in one go, and `Date.now()` alone
@@ -23,7 +35,7 @@ export async function uploadProductImage(localUri: string, sku: string): Promise
   */
   const objectRef = ref(
     storage,
-    `products/${safeSku}-${Date.now()}-${nextSuffix()}.${extensionFor(contentType, localUri)}`,
+    `products/${safeSku}-${Date.now()}-${nextSuffix()}.${extensionFor(contentType, prepared.uri)}`,
   );
 
   // storage.rules requires an `image/*` contentType. `fetch()` on a native
